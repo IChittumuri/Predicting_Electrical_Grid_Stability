@@ -1,0 +1,689 @@
+---
+title: "706 Project"
+author: "Isabella Chittumuri"
+date: "12/8/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Set working directory
+setwd("~/Desktop/Project/STAT 706")
+
+# Packages
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(readr)
+library(qualityTools)
+library(MASS)
+library(gridExtra)
+```
+
+# Set Up
+
+# About the data
+
+Found on UCI Machine Learning Repository:
+https://archive.ics.uci.edu/ml/datasets/Electrical+Grid+Stability+Simulated+Data+#
+
+The local stability analysis of the 4-node star system (electricity producer is in the center) implementing Decentral Smart Grid Control concept.
+
+```{r}
+# Import excel file
+grid <- read.csv("Data_for_UCI_named.csv")
+```
+
+Variable Names
+
+tau[x]: the reaction time of each network participant, a real value within the range 0.5 to 10.
+      : the time it takes to adjust its consumption and/or production in response to price changes
+
+tau1 = Reaction time, Energy producer
+tau2 = Reaction time, Consumer 1
+tau3 = Reaction time, Consumer 2
+tau4 = Reaction time, Consumer 3
+
+p[x]: nominal power produced(positive) or consumed(negative) by each network participant, a real value within the range -2.0 to -0.5 for consumers. As the total power consumed equals the total power generated, p1 (supplier node) = - (p2 + p3 + p4)
+    : the power produced (positive) or consumed (negative)
+
+p1 = Power balance, Energy producer
+p2 = Power balance, Consumer 1
+p3 = Power balance, Consumer 2
+p4 = Power balance, Consumer 3
+
+g[x]: price elasticity coefficient for each network participant, a real value within the range 0.05 to 1.00.
+    : price elasticity 
+
+g1 = Price elasticity coefficient(gamma), Energy producer
+g2 = Price elasticity coefficient(gamma), Consumer 1
+g3 = Price elasticity coefficient(gamma), Consumer 2
+g4 = Price elasticity coefficient(gamma), Consumer 3
+
+stab: Maximal real part of characteristic equation root (if positive, the system is linearly unstable; if negative, linearly stable)
+stabf: Stability label of the system (categorical: stable/unstable)
+
+```{r}
+summary(grid)
+```
+ 
+tau[x]: range 0.5 to 10
+p[x]: range -2.0 to -0.5, positive for p1
+g[x]: range 0.05 to 1.00
+stab: + = linearly unstable, - = linearly stable
+stabf: # stable-3620, # unstable-6380
+
+Conditionals: 
+
+If tau[x] ≡ [1, 3.7],
+   g[x] ≡ [0, 0.5],
+   T[x] ≡ [2.5, 4], avg tau[x], 
+        then the system is stable
+        
+If max tau[x] > 3,
+   min g[x] < 0.25;
+   avg T[x] ≡ [2.5, 4],
+         then the system is stable
+         
+```{r}
+# Make stabf numeric field into 1/0
+grid$num_stabf <- as.numeric(grid$stabf == "stable")
+```
+
+```{r}
+par(mfrow=c(2,2))
+
+#Frequency Histogram Plot 
+p1 <- hist(grid$tau1, breaks = 31,
+     main="Reaction time, all participants", 
+     xlab="Reaction time", 
+     col="lightblue")
+
+p2 <- hist(grid$g1, breaks = 31,
+     main="Price elasticity, all participants", 
+     xlab="Price elasticity", 
+     col="lightblue")
+
+p3 <- hist(grid$p2, breaks = 31,
+     main="Power balance, all consumers", 
+     xlab="Power balance", 
+     col="lightblue")
+
+p4 <- hist(grid$p1, breaks = 31,
+     main="Power balance, producer", 
+     xlab="Power balance", 
+     col="lightblue")
+
+# p5 <- hist(grid$num_stabf, breaks = 31, main="Stability Label", xlab="Stability Factor", col="lightblue")
+
+# same result for all tau[x], p[x], and g[x]
+```
+
+```{r}
+# Mean of tau
+mean(grid$tau1)
+
+#Unajusted Variance (sigma squared) tau
+a <- c(grid$tau1)
+n = length(a)
+var(a)*(n-1)/n
+
+#Unajusted Standard Deviation (sigma) tau
+sqrt(7.520819)
+
+# Mean of p1
+mean(grid$p1)
+
+#Unajusted Variance (sigma squared) p1
+a <- c(grid$p1)
+n = length(a)
+var(a)*(n-1)/n
+
+#Unajusted Standard Deviation (sigma) p1
+sqrt(0.5656882)
+
+# Mean of p2
+mean(grid$p2)
+
+#Unajusted Variance (sigma squared) p2
+a <- c(grid$p2)
+n = length(a)
+var(a)*(n-1)/n
+
+#Unajusted Standard Deviation (sigma) p2
+sqrt(0.1875004)
+
+# Mean of g1
+mean(grid$g1)
+
+#Unajusted Variance (sigma squared) g1
+a <- c(grid$g1)
+n = length(a)
+var(a)*(n-1)/n
+
+#Unajusted Standard Deviation (sigma) g1
+sqrt(0.07520858)
+```
+
+# Correlation between the predictors themselves
+
+```{r}
+p1 <- ggplot(grid, aes(x = tau1, y = p1)) + geom_jitter(height = 0, alpha = 0.1) + labs(x = "tau1", y = "p1") + geom_smooth()
+
+p2 <- ggplot(grid, aes(x = g1, y = p1)) + geom_jitter(height = 0, alpha = 0.1) + labs(x = "g1", y = "p1") + geom_smooth()
+
+p3 <- ggplot(grid, aes(x = tau1, y = g1)) + geom_jitter(height = 0, alpha = 0.1) + labs(x = "tau1", y = "g1") + geom_smooth()
+
+grid.arrange(p1, p2, p3, ncol = 2)
+```
+
+No relationship between the predictors themselves.
+
+# Correlations between the predictors and response
+
+```{r}
+# scatter plot between each predictor and the response
+p1 <- ggplot(grid, aes(x = tau1, y = num_stabf)) + geom_jitter(height = 0, alpha = 0.1) + labs(x = "Reaction time", y = "Stability") + geom_smooth()
+
+p2 <- ggplot(grid, aes(x = p1, y = num_stabf)) + geom_jitter(height = 0, alpha = 0.1) + labs(x = "Power balance", y = "Stability") + geom_smooth()
+
+p3 <- ggplot(grid, aes(x = g1, y = num_stabf)) + geom_jitter(height = 0, alpha = 0.1) + labs(x = "Price elasticity", y = "Stability") + geom_smooth()
+
+p4 <- ggplot(grid, aes(x = stab, y = num_stabf)) + geom_jitter(height = 0, alpha = 0.1) + labs(x = "Equation root", y = "Stability") + geom_smooth()
+
+# Shows all 4 plots at once
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+
+# same result for all tau[x], p[x], and g[x]
+```
+
+- The blue line is the linear model we created
+- The dots are the actual data points. When the system is stable, it becomes a 1. When the system is unstable, it becomes a 0.
+
+1st: negative curved relationship to stability
+2nd: no relationship to stability
+3rd: negative linear relationship to stability
+4th: direct relationship to stability. If negative, the system is linearly stable; if positive, the system is linearly unstable.
+
+# Model Selection 
+
+## Binominal model
+
+```{r}
+mod <- glm(num_stabf ~ tau1 + tau2 + tau3 + tau4 + p1+ p2 + p3 + p4 + g1 + g2 + g3 + g4, family = binomial(link = "logit"), grid)
+
+summary(mod)
+
+# Number of observations in lmod
+# nobs(mod, use.fallback=F)
+```
+
+NA as a coefficient in a regression indicates that the variable in question is linearly related to the other variables. In this case, this means that p1 (supplier node) = - (p2 + p3 + p4)
+
+The stars and dots in the significant part: the *** mean that the p-value is effectively 0, the . means that it’s between .05 and 1 and nothing means that its above 0.1.
+
+The summary function indicates all of the predictors except for p1, p2, p4 to be significant to the model. It doesn't make sense that only p3 is significant, when  p1 = - (p2 + p3 + p4). 
+
+???
+Note: family binomial automatically uses the link function logit
+
+## Testing Significance of Predictors
+
+### AIC
+
+$$
+AIC = -2log \space L + 2q
+$$
+
+The step function looks at each one predictors in respect to the model's AIC. It removes a variable one at a time and refits the
+model. It will keep doing this until <none> is at the top, with the model's lowest possible AIC.
+
+```{r}
+modr <- step(mod, trace = 1)
+```
+
+Here you can see that p[x] ended up getting dropped out because dropping them lowered the AIC, more than keeping them in.
+
+In the resulting model, we have tau1 + tau2 + tau3 + tau4 + g1 + g2 + g3 + g4 as predictors for the response num_stabf. 
+
+### Anova Chi Square Test
+
+```{r}
+# Anova test, original model and resulting model
+anova(mod, modr, test = "Chi")
+```
+
+Using the ANOVA test, we see that the p-value is greater than 0.05. This suggests that we can drop p[x] as predictors during the fitting of the model.
+
+```{r}
+summary(modr)
+
+```
+
+In the resulting model all of the predictors are highly significant.
+
+$beta_0$: represents the intercept and the value when all X variables are zero. This means when all tau[i] and g[i] are zero, num_stabf is 11.78026. 
+
+$$
+Y = 11.78026 - 0.31423*tau1 - 0.32254*tau2 - 0.31855*tau3 \\ - 0.33201*tau4 - 2.68971*g1 - 2.91493*g2 - 3.12117*g3 - 2.85428*g4  
+$$
+
+
+
+# dont
+Because the intercept it positive, this means that the system is unstable if all predictors are zero.
+
+$beta_i$: represents the slope, which is negative for every beta. For every unit increase in beta[i], we expect stab to go up/down by the beta[i] estimate value. 
+
+### Deviance Test
+
+In the summary function, the null deviance and the residual deviance are given with large degrees of freedom.
+- The residual deviance is the deviance for this model. It has 9991 degrees of freedom, the number observations minus the number of parameters (9, including the intercept). 
+- The null deviance is if you don’t have any predictors, but only have the intercept in the model.
+
+The difference between two deviances follow the chi squared distribution, therefore we can set up a hypothesis test. 
+
+```{r}
+# Calculating dev_res and dev_null variables
+p_hat <- fitted.values(mod)
+
+logit <- qlogis
+dev_res <- -2*sum(p_hat*logit(p_hat) + log(1-p_hat))
+
+null_mod <- update(mod, formula. = . ~ 1)
+p_hat_null <- fitted.values(null_mod)
+dev_null <- -2*sum(p_hat_null*logit(p_hat_null) + log(1-p_hat_null))
+
+dev_res
+dev_null
+
+# diff in degrees of freedom
+9999 - 9991
+```
+
+Next we do a deviance test. The summary function shows the null deviance and the residual deviance with large degrees of freedom. The residual deviance is the deviance for the resulting model. It has a value of 13091.2 with 9991 degrees of freedom. The null deviance is if we don’t have any predictors, but only have the intercept in the model. It has a value of 7817.6 with 9991 degrees of freedom. The difference between two deviances follow the chi squared distribution, therefore we set up a hypothesis test. The result gave us a low p-value of 0, which suggested that the 8 variables we included are more useful than the model with just the intercept.
+
+You can do a chi square test between those two things and say if those two models are different or not
+
+```{r}
+# Chi square test, with # diff in df
+1 - pchisq(dev_null - dev_res, 8)
+```
+
+The chi square test tells us if those two models are different or not. We get a very low p-value of 0. This suggests that the 8 variables we included are more useful, than the model with just the intercept
+
+### ??? 
+What does a chi square test of 0 mean?
+
+# Confidence Intervals (CI)
+
+## Predictors
+
+You can test the confidence intervals using the normal distribution. 
+
+```{r}
+# CI, on linear scale/probability scale
+confint(modr) 
+```
+
+If you repeat the experiment, you expect that 95% of the CIs contain the true value of beta[x].
+
+If exponentiated, it transforms to an odds scale.
+
+To calculate it by hand: CI = estimate + alpha .025 is the 1.96*std error
+
+```{r}
+# CI of tau1, on odds scale
+exp(-0.31423 + c(-1,1) * 1.96 * 0.01129)
+```
+
+```{r}
+exp(confint(modr))
+```
+
+# Model Diagnostics
+
+A residual is the difference between the observed value of Y and the estimated value of Y ($\hat{Y_i}$)
+
+```{r}
+par(mfrow=c(2,2))
+plot(modr)
+```
+
+Plot 1: Residuals vs. Fitted
+- A residual is the difference between the observed value of Y and the estimated value of Y ($\hat{Y_i}$)
+- If the expected value is the same as the observed value, your red line is going to be on the y-axis zero dotted line. If not, you can be above the line or below the line.
+- Here we see relatively straight line with equal variations throughout, meaning that this model is homoscedastic. 
+
+Plot 2: Normal Q-Q
+- This plot looks are all the residuals, and orders them and compares them according to a normal distribution. This is because we expect the residuals to be normal.
+- We’re assuming that the errors are normally distributed, and if they are it should follow a normal distribution. If they are normal, we expect them to follow this dotted line.
+- We're estimating the variance of the residuals and you want this to follow the dotted line.
+- Here we see that for the most part the variance of the residuals follow the dotted line. However, we see deviations on the tails.
+
+??? Plot 3: Scale-Location
+- This plot is another version of the first plot, the fitted values vs. the standardized residuals.
+
+Plot 4: Cook’s distance
+- This plots the residuals vs. leverage, and is a way to identify outliers. 
+- A Cook’s distances is another way of standardizing how far points away are from where they’re expected to be. 
+- This plot is showing that there aren’t any outliers here.
+
+#  Residuals' Variance
+
+- Variance is not constant (binary variance = p(1-p))
+- Because of this, we can use the deviance, which is the square root value of the equation below and just make it negative or positive
+- Use deviance residual instead: 
+
+$$
+r_i = sign(y_i - \hat p_i)\sqrt{d_i^2}
+$$
+
+- The deviance residuals are not constrained to have mean zero so the mean level in the plot is not of interest
+
+## Predicted against Residuals
+
+```{r}
+# Duplicate dataset, modify residuals
+grid2 <- grid %>%
+  mutate(residuals=residuals(modr), linpred=predict(modr))
+
+# Plot of predictions of model against residuals of model
+grid2 %>%
+  ggplot(aes(x = linpred, y = residuals)) +
+  geom_point() +
+  geom_smooth(method = 'loess')
+```
+
+What we see here is that it’s pretty straight. The smooth function shows us that the CI becomes bigger towards the tails of the line. Unlike previously, the residuals don’t have to add up to 0 so it’s okay that its sort of below 0.
+
+## Individual Predictors against Residuals 
+
+```{r}
+# Residual plots of tau1 and g1
+p1 <- grid2 %>% 
+  ggplot(aes(x = tau1, y = residuals)) + 
+  # geom_point() + 
+  geom_smooth(method = 'loess') +
+  geom_rug(sides = "b", alpha = .3) +
+  labs(x = "Reaction time", y = "Residuals")
+
+p2 <- grid2 %>% 
+  ggplot(aes(x = g1, y = residuals)) + 
+  # geom_point() + 
+  geom_smooth(method = 'loess') +
+  geom_rug(sides = "b", alpha = .3) +
+   labs(x = "Price elasticity", y = "Residuals")
+
+# Shows both plots at once
+grid.arrange(p1, p2, ncol = 2)
+
+# same result for all tau[i] and g[i]
+```
+
+This looks okay, if you saw any crazy patterns doing up or down. We see this it’s pretty flat and straight
+
+# Goodness of fit
+
+## Calibration curve
+
+```{r}
+# Predictions of model
+pred_prob <- predict(modr, type="response")
+
+# Calibration curve
+grid %>%
+ggplot(aes(x = pred_prob, y = num_stabf)) +
+geom_point(alpha = .2) +
+geom_smooth(method = "loess") +
+geom_abline(slope = 1, intercept = 0, linetype = "longdash") + coord_cartesian(ylim = c(0,1)) +
+labs(x = "Predictied Values", y = "Acutal Values")
+```
+
+- This curve plots on the x-axis the predictions and the y-axis it plots the response or true value there.
+- The dots is not very interesting so you apply a smoothing function to it, and what you want is for your model to be well calibrated. Calibrated means that every time I assign a probability of 10% stable, if you look at 100 grid frequencies, ideally 10% of them would be stable.
+- That’s what this curve is showing. The dotted line goes through 0,0 and has a slope of 1. You want the curve to basically fall along that dotted line.
+- The black lines on the top and bottom are the instances of stable and unstable 
+
+In reference to that little dip in the middle
+- if look at the .63 pred_prob which says that this frequency has a 63% chance of grid being stable, but in reality maybe it's only 60% chance.
+
+# Confusion matrix
+
+```{r}
+summary(grid)
+```
+
+Total stable = 3620; Total unstable = 6380
+
+```{r}
+# Confusion matrix, using cutoff 0.5
+tabl <- grid %>%
+  mutate(predout = ifelse(fitted.values(modr) > .5, "stable", "unstable")) %>% 
+  xtabs(~ stabf + predout, .)
+
+tabl
+```
+
+This matrix shows you the different combinations of the actual label (two rows on left side) and the predicted (from the model) label (two columns on right side)
+
+## Accuracy
+
+- Number of correct cases divided by the total number of cases
+
+```{r}
+# Accuracy
+(2547+5602)/(2547+1073+778+5602)
+```
+
+Our model is 81% accurate.
+
+Accuracy can be misleading, especially in an imbalanced dataset.
+An imbalanced dataset is one where the number of people where you have the thing you’re trying to predict is not very high. 
+We see that 1073 are being classified as unstable when they are actually stable. 
+
+```{r}
+# Percentage of stable in data
+3620/10000
+```
+
+In this case, there is about 36.2% of observations classified as stable.
+
+## Specificity
+
+- Of those that are unstable, how many were correctly predicted as unstable?
+
+```{r}
+# Specificity
+5602/(5602 + 778)
+```
+
+Our model has a specificity of 87.8%. If we get every instance of unstable, specificity would be 100%.
+
+## Sensitivity
+
+- Of those that are stable, how many were correctly predicted as stable?
+- Sensitivity is the positive case, like if you’re sensitive to something.
+
+```{r}
+# Sensitivity
+2547/(2547 + 1073)
+```
+
+Our model has a sensitivity of 70.36% 
+
+## PPV
+
+- Positive Predicted Value (PPV)
+- What’s the probability that the grid is stable if it tests stable?
+- Of those that you predicted were stable, how many were actually stable? 
+
+```{r}
+# PPV
+2547/(2547 + 778)
+```
+
+## NPV
+
+- Negative Predicted Value (NPV)
+- What’s the probability that the grid is unstable if it tests unstable?
+- Of those that you predicted were unstable, how many were actually unstable? 
+
+```{r}
+#NPV
+5602/(5602 + 1073)
+```
+
+# Odds 
+
+## Odds Ratio for Coefficients
+
+- If odds ratio is 1, it means that there is a greater likelihood of having the outcome.
+- If odds ratio of below 1, it means that there is a lesser likelihood of having the outcome. For this type of result, you need to subtract it from 1 to get the percentage.
+
+```{r}
+# Odds ratios of coef
+exp(coef(modr))
+
+# for tau1
+1 - .7303535
+
+# for g1
+1 - .06790042
+```
+
+From this we can say:
+- The odds of the system being stable is 27% less likely with every unit increase in tau1.
+- the odds of the system being stable is 93% less likely with every unit increase in g1.
+
+## Odds Ratio for difference in predictor value
+
+What is the difference odds in testing for stable when tau1 goes from the 1st quartile to 3rd quartile? 
+
+```{r}
+# Diff between 1st and 3rd quant
+tau1_1st <- quantile(grid$tau1, .25) 
+tau1_3rd <- quantile(grid$tau1, .75)
+tau1_diff <- tau1_3rd - tau1_1st
+
+# That 75% , to take it out unnamed
+tau1_diff <- unname(tau1_diff)
+
+# Take a look at the estimate, std error, p value, CI high and low, filtering for the tau1
+tidy_mod <- broom::tidy(modr, conf.int = T) %>% 
+  filter(term == "tau1")
+
+# Multiply the tau1_diff to each of these values and then exponentiate it 
+# This is because the CI is semantic on the linear scale so you can’t really just multiply it when its exponentiate because it’s no longer semantic
+tidy_mod %>%
+  dplyr::select(estimate, conf.low, conf.high) %>% 
+  mutate_all(~exp(.*tau1_diff))
+
+# tau1 estimate odds %
+1 - 0.2248071
+```
+
+The difference between the first quartile tau1 value and the third quartile tau1 value is 4.749798. We used this number to alter the tau1 estimate and confidence interval, and exponentiated the result to get it in an odds ratio scale. Our odds for tau1 estimate is 0.224807. We subtracted this value from 1 and got 0.775193. This means that the odds of the system being stable is 78% less likely going from the first tau1 quartile to the third tau1 quartile.
+
+If we repeat the experiment, we expect, on average, that 95% of the Confidence Interval (CI) contains the true value of the odds ratio. The lower CI limit is 0.2023841, while the upper CI limit is 0.2497142. This interval is very close in range to the calculated odds ratio, which was 0.224807. 
+
+This is all to say that 95% of the CI contains the true value of the increase in the odds ratio of getting a stable test result, going from the first tau1 quartile to the third tau1 quartile.
+
+What is the difference odds in testing for stable when g1 goes from the 1st quartile to 3rd quartile? 
+
+```{r}
+# Diff between 1st and 3rd quant
+g1_1st <- quantile(grid$g1, .25) 
+g1_3rd <- quantile(grid$g1, .75)
+g1_diff <- g1_3rd - g1_1st; g1_diff
+
+# That 75% , to take it out unnamed
+g1_diff <- unname(g1_diff)
+
+# Take a look at the estimate, std error, p value, CI high and low, filtering for the g1
+tidy_mod <- broom::tidy(modr, conf.int = T) %>% 
+  filter(term == "g1")
+
+# Multiply the tau1_diff to each of these values and then exponentiate it 
+# This is because the CI is semantic on the linear scale so you can’t really just multiply it when its exponentiate because it’s no longer semantic
+tidy_mod %>% 
+  dplyr::select(estimate, conf.low, conf.high) %>% 
+  mutate_all(~exp(.*g1_diff))
+
+# tau1 estimate odds %
+1 - 0.2787664
+```
+
+The difference between the first quartile g1 value and the third quartile g1 value is 0.4749135. We used this number to alter the g1 estimate and confidence interval, and exponentiated the result to get it in an odds ratio scale. Our odds for g1 estimate is 0.2787664. We subtracted this value from 1 and got 0.7212336. This means that the odds of the system being stable is 72% less likely going from the first g1 quartile to the third g1 quartile.
+
+If we repeat the experiment, we expect, on average, that 95% of the Confidence Interval (CI) contains the true value of the odds ratio. The lower CI limit is 0.2513817, while the upper CI limit is 0.3087614. This interval is very close in range to the calculated odds ratio, which was 0.2787664. 
+
+This is all to say that 95% of the CI contains the true value of the increase in the odds ratio of getting a stable test result, going from the first g1 quartile to the third g1 quartile.
+
+# Probability
+
+```{r}
+summary(grid)
+```
+
+```{r}
+# New data frame with the mean values for all the predictors
+# Create two rows where tau1 has 1st and 3rd quantile value
+frequency <- data.frame(
+  tau1 = c(tau1_1st, tau1_3rd),
+  tau2 = 5.25,
+  tau3 = 5.25,
+  tau4 = 5.25,
+  g1 = 0.525,
+  g2 = 0.525,
+  g3 = 0.525,
+  g4 = 0.525
+)
+
+# Predict shows probability
+x <- predict(modr, newdata = frequency, type = "response")
+
+# Prob of stable with tau1 1st quantile
+(p1 <- x[1])
+
+# Prob of stable with tau1 3rd quantile
+(p2 <- x[2])
+```
+
+If all of the predictors are at a mean value while tau1 is at a value of the 1st quantile, the probability of being stable is 42%. 
+
+If all of the predictors are at a mean value while tau1 is at a value of the 3rd quantile, the probability of being stable is 14%. 
+
+```{r}
+# New data frame with the mean values for all the predictors
+# Create two rows where g1 has 1st and 3rd quantile value
+frequency <- data.frame(
+  tau1 = 5.25,
+  tau2 = 5.25,
+  tau3 = 5.25,
+  tau4 = 5.25,
+  g1 = c(g1_1st, g1_3rd),
+  g2 = 0.525,
+  g3 = 0.525,
+  g4 = 0.525
+)
+
+# Predict shows probability
+x <- predict(modr, newdata = frequency, type = "response")
+
+# Prob of stable with g1 1st quantile
+(p1 <- x[1])
+
+# Prob of stable with g1 3rd quantile
+(p2 <- x[2])
+```
+
+If all of the predictors are at a mean value while g1 is at a value of the 1st quantile, the probability of being stable is 39%. 
+
+If all of the predictors are at a mean value while g1 is at a value of the 3rd quantile, the probability of being stable is 15%. 
+
+
+
