@@ -1,0 +1,2 @@
+### Abstract
+The functionality of the modern world depends highly on electricity. Electrical production and consumption happen on a real time basis. The second electricity is produced it is consumed, regardless of how far the producer is from the consumer. The power grid has electrical devices and equipment to monitor and maintain stability of electrical frequency. In this project, we study statistical analysis of the smart gird to model and determine the stability of the system.
